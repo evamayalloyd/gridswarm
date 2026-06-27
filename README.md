@@ -1,94 +1,113 @@
-# urban-swarm
+# GridSwarm — A2A Urban Energy Planning Swarm
 
-Simple ReAct agent
-Agent generated with `agents-cli` version `0.6.0`
+A multi-agent **Agent-to-Agent (A2A)** system built on Google's **Agent Development Kit (ADK)** and deployed to **Vertex AI Agent Runtime**. Given a target city population, GridSwarm orchestrates a team of specialized Gemini agents to research current energy data, model the required renewable infrastructure, and synthesize a complete build-out plan.
 
-## Project Structure
-
-```
-urban-swarm/
-├── app/         # Core agent code
-│   ├── agent.py               # Main agent logic
-│   ├── fast_api_app.py        # FastAPI Backend server
-│   └── app_utils/             # App utilities and helpers
-├── tests/                     # Unit, integration, and load tests
-├── GEMINI.md                  # AI-assisted development guide
-└── pyproject.toml             # Project dependencies
-```
-
-> 💡 **Tip:** Use [Gemini CLI](https://github.com/google-gemini/gemini-cli) for AI-assisted development - project context is pre-configured in `GEMINI.md`.
-
-## Requirements
-
-Before you begin, ensure you have:
-- **uv**: Python package manager (used for all dependency management in this project) - [Install](https://docs.astral.sh/uv/getting-started/installation/) ([add packages](https://docs.astral.sh/uv/concepts/dependencies/) with `uv add <package>`)
-- **agents-cli**: Agents CLI - Install with `uv tool install google-agents-cli`
-- **Google Cloud SDK**: For GCP services - [Install](https://cloud.google.com/sdk/docs/install)
-
-
-## Quick Start
-
-Install `agents-cli` and its skills if not already installed:
-
-```bash
-uvx google-agents-cli setup
-```
-
-Install required packages:
-
-```bash
-agents-cli install
-```
-
-Test the agent with a local web server:
-
-```bash
-agents-cli playground
-```
-
-You can also use features from the [ADK](https://adk.dev/) CLI with `uv run adk`.
-
-## Commands
-
-| Command              | Description                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `agents-cli install` | Install dependencies using uv                                                         |
-| `agents-cli playground` | Launch local development environment                                                  |
-| `agents-cli lint`    | Run code quality checks                                                               |
-| `agents-cli eval`    | Evaluate agent behavior (generate, grade, analyze, and more — see `agents-cli eval --help`) |
-| `uv run pytest tests/unit tests/integration` | Run unit and integration tests                                                        |
-| `agents-cli deploy`  | Deploy agent to Agent Runtime                                                                |
-| `agents-cli publish gemini-enterprise` | Register deployed agent to Gemini Enterprise                    || [A2A Inspector](https://github.com/a2aproject/a2a-inspector) | Launch A2A Protocol Inspector                                                        |
-
-## 🛠️ Project Management
-
-| Command | What It Does |
-|---------|--------------|
-| `agents-cli scaffold enhance` | Add CI/CD pipelines and Terraform infrastructure |
-| `agents-cli infra cicd` | One-command setup of entire CI/CD pipeline + infrastructure |
-| `agents-cli scaffold upgrade` | Auto-upgrade to latest version while preserving customizations |
+Built for the Gemini AI Hackathon (Google I/O 2026 stack).
 
 ---
 
-## Development
+## What it does
 
-Edit your agent logic in `app/agent.py` and test with `agents-cli playground` - it auto-reloads on save.
+Ask GridSwarm to *"Design a renewable energy plan for a city of 100,000 residents"* and a coordinator dispatches three tool-isolated sub-agents in sequence:
 
-## Deployment
+1. **Researcher** — uses **Google Search** to gather current, sourced figures (solar/wind capacity factors, household demand, panel/turbine output).
+2. **Modeler** — uses **code execution** to compute total demand, required generation capacity, panel/turbine counts, generation mix, and land-use estimates from the researched figures.
+3. **Reporter** — synthesizes the research and the model output into a clean, structured Markdown report (Assumptions, Demand, Generation Mix, Land & Build-out, Caveats).
 
-```bash
-gcloud config set project <your-project-id>
-agents-cli deploy
+Each agent is restricted to a single capability, which keeps execution traces clean and prevents tool-routing confusion — a deliberate design choice for reliability.
+
+---
+
+## Architecture
+
+```
+                        ┌──────────────────────────┐
+   user prompt  ───────▶│   Coordinator (root)     │
+                        │   SequentialAgent        │
+                        └───────────┬──────────────┘
+                                    │ delegates in fixed order
+            ┌───────────────────────┼───────────────────────┐
+            ▼                       ▼                       ▼
+   ┌─────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+   │  Researcher     │    │   Modeler        │    │   Reporter       │
+   │  google_search  │───▶│  code execution  │───▶│  synthesis only  │
+   └─────────────────┘    └──────────────────┘    └──────────────────┘
+        sourced               computed                final report
+        figures               numbers                 (Markdown)
 ```
 
-To add CI/CD and Terraform, run `agents-cli scaffold enhance`.
-To set up your production infrastructure, run `agents-cli infra cicd`.
+The root uses ADK's `SequentialAgent` for deterministic orchestration — each sub-agent's output is passed forward as context to the next, guaranteeing the full research → model → report chain completes on every run.
 
-## Observability
+---
 
-Built-in telemetry exports to Cloud Trace, BigQuery, and Cloud Logging.
+## Google Cloud stack
 
-## A2A Inspector
+| Layer | Service |
+|-------|---------|
+| Model | Gemini 3.5 Flash (`gemini-3.5-flash`) on Vertex AI |
+| Framework | Agent Development Kit (ADK) |
+| Tools | ADK `google_search`, built-in code executor |
+| Deployment | Vertex AI Agent Runtime (Agent Engine) |
+| Infrastructure | Terraform (service accounts, IAM, storage) |
+| Observability | Cloud Trace + OpenTelemetry (enabled at deploy) |
+| Protocol | A2A agent card (`.well-known/agent-card.json`) |
 
-This agent supports the [A2A Protocol](https://a2a-protocol.org/). Use the [A2A Inspector](https://github.com/a2aproject/a2a-inspector) to test interoperability.
-See the [A2A Inspector docs](https://github.com/a2aproject/a2a-inspector) for details.
+---
+
+## Project layout
+
+```
+app/
+  agent.py              # Coordinator + 3 sub-agents (the swarm)
+  agent_engine_app.py   # Agent Runtime application wrapper
+deployment/terraform/   # Infrastructure-as-code
+tests/                  # Unit, integration, eval datasets
+Dockerfile
+pyproject.toml
+```
+
+---
+
+## Run locally
+
+```bash
+# install dependencies
+agents-cli install
+
+# launch the interactive playground (ADK web UI)
+agents-cli playground
+# open the dev UI and send: "Design a renewable energy plan for a city of 100,000 residents"
+```
+
+Or a single-shot query:
+
+```bash
+agents-cli run "Design a renewable energy plan for a city of 100,000 residents"
+```
+
+## Deploy to Agent Runtime
+
+```bash
+agents-cli scaffold enhance --deployment-target agent_runtime
+agents-cli deploy --project <YOUR_PROJECT_ID>
+```
+
+Deployment packages the agent, builds a container, pushes to Artifact Registry, and provisions a Vertex AI reasoning engine with Cloud Trace enabled. The output includes the Agent Runtime ID, Agent Card URL, and Console link.
+
+---
+
+## Example output (city of 100,000, US baseline)
+
+- **Total annual demand:** 431,640 MWh/year
+- **Solar (50%):** 100.97 MW → 168,285 panels (600W) → ~606 acres
+- **Wind (50%):** 72.04 MW → 24 turbines (3.0 MW) → 24 acres net footprint
+
+All figures computed at runtime by the Modeler agent from live-researched inputs, with a Caveats section noting exclusions (commercial/industrial load, storage, intermittency).
+
+---
+
+## Design notes
+
+- **Tool isolation** — search and code execution are split across agents because ADK does not reliably combine the built-in search tool and code executor in a single agent; separating them also produces cleaner, more legible traces.
+- **Deterministic orchestration** — `SequentialAgent` was chosen over LLM-driven handoffs after observing that coordinator-style delegation could stall after the first sub-agent. The sequential pipeline guarantees completion.
+- **Observability-first** — telemetry is enabled at deploy so every run produces Cloud Trace spans for each agent and tool call, making the multi-agent flow inspectable in the Console.
